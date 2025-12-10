@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  sepsis-predictor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sepsis-multimodal-app:latest
+    container_name: sepsis-predictor
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    environment:
+      - LOG_LEVEL=INFO
+    volumes:
+      # Opcional: montar logs
+      - ./logs:/app/logs:rw
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    # Límites de recursos (ajusta según tu hardware)
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '2'
+          memory: 4G
