@@ -1,251 +1,267 @@
-# 🏥 Predictor Multimodal de Mortalidad a 28 días en Sepsis
+# Predicción de mortalidad a 28 días en sepsis con Machine Learning
 
-Sistema de predicción de mortalidad basado en **datos clínicos tabulares** y **notas médicas** usando **AutoGluon** y **ClinicalBERT**.
-
-> ⚠️ **IMPORTANTE**: Esta herramienta es exclusivamente para **investigación**. No debe usarse para tomar decisiones clínicas.
-
----
-
-## 📊 Arquitectura del Modelo
-
-### Modelos Base
-- **110 modelos entrenados** con preset `best_quality`
-- Algoritmos: CatBoost, LightGBM, XGBoost, RandomForest, ExtraTrees, NeuralNetFastAI, NeuralNetTorch
-- Estrategia: 8-fold bagging + 3 niveles de stacking
-- **Modelo final**: WeightedEnsemble_L3
-
-### Features
-**Tabulares (5):**
-- Hemoglobina (g/dL): 3.0-25.0
-- Albúmina (g/dL): 1.0-8.0
-- aPTT (segundos): 10.0-200.0
-- Bilirrubina total (mg/dL): 0.1-50.0
-- Estancia UCI (días): 0.1-365.0
-
-**Texto:**
-- 768 embeddings de ClinicalBERT (`emilyalsentzer/Bio_ClinicalBERT`)
-- Soporte para español (traducción automática con DeepL/Helsinki-NLP)
+Proyecto de tesis · **Universidad Peruana Cayetano Heredia (UPCH)** — Facultad de
+Ciencias e Ingeniería.
 
 ---
 
-## 🚀 Instalación y Uso
+## Sobre el proyecto
 
-### Opción 1: Docker (Recomendado)
+La **sepsis** es una de las principales causas de mortalidad en las unidades de
+cuidados intensivos (UCI). Identificar tempranamente a los pacientes con mayor
+riesgo de fallecer permite priorizar recursos y decisiones terapéuticas.
 
-1. **Clonar el repositorio**
+Este trabajo desarrolla un **modelo de aprendizaje automático** que estima la
+**probabilidad de muerte a 28 días** en pacientes con sepsis, a partir de
+variables clínicas y de laboratorio disponibles en las primeras horas de
+hospitalización. El proyecto replica y extiende el estudio de
+**Zhang et al. (2024)**, evaluando además el subgrupo de pacientes con
+**síndrome de disfunción cerebral aguda (SAD)** —delirium/encefalopatía
+detectada con CAM-ICU—, un grupo asociado a peor pronóstico.
+
+El resultado se entrega en dos formas:
+
+1. Un **modelo predictivo** entrenado y calibrado (`Ensemble_top3`).
+2. Una **aplicación web interactiva** (Streamlit, bilingüe español/inglés) que
+   permite ingresar los datos de un paciente y obtener su probabilidad de
+   mortalidad estimada, pensada como herramienta de apoyo exploratorio.
+
+> ⚠️ Herramienta de investigación con fines académicos. **No es un dispositivo
+> médico** ni sustituye el juicio clínico profesional.
+
+---
+
+## Resultados principales
+
+El modelo se entrenó sobre una cohorte de **12 564 pacientes** con sepsis
+extraída de MIMIC-IV v3.1 (prevalencia de muerte a 28 días = **14.3 %**).
+
+| Modelo | AUC (test) | IC 95 % | Sensibilidad | Especificidad | Calibración (HL p) |
+|---|---|---|---|---|---|
+| **Ensemble_top3** ✅ | **0.900** | [0.883 – 0.918] | 0.859 | 0.780 | 0.62 (buena) |
+| Stacking_top3 | 0.907 | [0.889 – 0.924] | 0.889 | 0.750 | 0.00 (deficiente) |
+| LightGBM | 0.894 | — | — | — | — |
+| XGBoost | 0.892 | — | — | — | — |
+| ExtraTrees | 0.885 | — | — | — | — |
+
+Aunque el *Stacking_top3* obtuvo un AUC ligeramente superior, su **calibración
+era deficiente** (la probabilidad predicha no reflejaba el riesgo real). Se
+eligió como modelo final el **`Ensemble_top3`**: cruza el 90 % de AUC, está
+**bien calibrado** (test de Hosmer-Lemeshow p = 0.62) y es más ligero.
+
+**Hallazgo del subgrupo SAD:** los pacientes con disfunción cerebral aguda
+(SAD+, n = 5 213) presentaron una mortalidad del **23.0 %**, frente al **8.1 %**
+de los pacientes sin ella (SAD−, n = 7 351) — un riesgo **2.8× mayor**.
+
+**Interpretabilidad (SHAP):** las variables de mayor impacto en la predicción
+fueron la **edad**, los **días de estancia en UCI**, la **saturación de O₂** y
+la razón **BUN/albúmina**.
+
+---
+
+## Arquitectura del sistema
+
+El sistema sigue una arquitectura por capas (metodología CRISP-DM), desde la
+extracción de datos hasta el despliegue:
+
+![Arquitectura del sistema](artifacts/figuras_conceptuales_v11/figura_arquitectura_sistema.png)
+
+1. **Datos** — extracción desde **MIMIC-IV v3.1** (módulos ICU, HOSP y NOTE) vía
+   SQL en Google BigQuery.
+2. **Preprocesamiento** — construcción de la cohorte (criterios de inclusión y
+   exclusión), imputación de valores faltantes (MICE), normalización
+   (StandardScaler) e ingeniería de 8 variables clínicas derivadas. En paralelo,
+   las notas clínicas se procesan con embeddings BioBERT reducidos por PCA.
+3. **Modelado** — entrenamiento y comparación de múltiples algoritmos;
+   optimización de hiperparámetros con Optuna; construcción del ensemble final.
+4. **Evaluación** — AUC-ROC con intervalos de confianza por *bootstrap*,
+   sensibilidad/especificidad, coeficiente Kappa, *Brier score*, test de
+   calibración de Hosmer-Lemeshow e interpretabilidad con SHAP.
+5. **Despliegue** — serialización del modelo (`joblib`) y aplicación web
+   en Streamlit.
+
+---
+
+## ¿Cómo funciona la predicción?
+
+Cuando se ingresan los datos de un paciente, la app aplica el pipeline del
+modelo final (**`Ensemble_top3`**):
+
+```
+Variables clínicas ingresadas
+        │
+        ▼
+1. Ingeniería de variables → se calculan 8 razones clínicas derivadas
+                              (índice de shock, BUN/albúmina, Edad×SOFA, ...)
+        ▼
+2. Imputación (MICE)        → las variables no ingresadas se estiman a partir
+                              de las correlaciones aprendidas en la cohorte
+        ▼
+3. Normalización            → StandardScaler
+        ▼
+4. Tres modelos base        → XGBoost, LightGBM y ExtraTrees predicen por
+                              separado; cada uno calibrado en cascada
+                              (Platt + isotónica)
+        ▼
+5. Ensemble                 → se promedian las 3 probabilidades calibradas
+        ▼
+6. Clasificación            → riesgo ALTO si P ≥ 0.135 (umbral de Youden),
+                              riesgo BAJO en caso contrario
+```
+
+Gracias al imputador MICE, el modelo entrega una predicción válida **aun con
+datos incompletos**; cuantas más variables reales se ingresen, más precisa es la
+estimación. El modelo trabaja con **40 variables** en total: 32 clínicas
+estructurales + 8 derivadas.
+
+---
+
+## Tecnologías utilizadas
+
+- **Lenguaje:** Python 3.11
+- **Datos:** MIMIC-IV v3.1 · SQL en Google BigQuery
+- **Manipulación de datos:** pandas, NumPy
+- **Machine Learning:** scikit-learn, XGBoost, LightGBM, CatBoost
+- **Optimización de hiperparámetros:** Optuna
+- **Balanceo de clases:** imbalanced-learn (SMOTE)
+- **Interpretabilidad:** SHAP
+- **NLP de notas clínicas:** BioBERT (embeddings) + PCA
+- **Visualización:** Matplotlib
+- **Aplicación web:** Streamlit
+- **Serialización del modelo:** joblib
+- **Traducción de notas (ES→EN):** deep-translator (Google Translate)
+
+Las versiones exactas están fijadas en [`requirements.txt`](requirements.txt).
+
+---
+
+## Estructura del repositorio
+
+```
+proyecto-v7/
+├── app_sepsis.py                  Aplicación Streamlit (interfaz + predicción)
+├── src/
+│   └── sepsis_model.py            Clases del modelo: EnsembleTop3, CascadeCal,
+│                                  ingeniería de las 8 variables derivadas
+├── scripts/                       Scripts reproducibles
+│   ├── build_app_model.py         Reconstruye el modelo desplegable
+│   └── gen_figuras_*_v11.py       Generación de las figuras de la tesis
+├── artifacts/
+│   └── figuras_conceptuales_v11/  Figuras finales de la tesis (PNG)
+├── assets/logos/                  Logotipos para los diagramas
+├── sepsis_v21_final.ipynb         Notebook de entrenamiento del modelo final
+├── sepsis_v20.ipynb · ..._v2/v3   Notebooks de iteraciones previas
+├── requirements.txt               Dependencias (Python 3.11)
+└── *.md                           Documentación y bitácoras del proceso
+```
+
+> **No se versionan** (ver [`.gitignore`](.gitignore)): `data_local/` (datos
+> MIMIC-IV de acceso restringido), los modelos `*.joblib` (binarios grandes),
+> `app_sepsis_local/` (versiones antiguas) y artefactos temporales.
+
+---
+
+## Instalación
+
+Requiere **Python 3.11**.
+
 ```bash
-git clone <tu-repo>
-cd t_model_predictor_sepsis
-```
+# 1. Clonar el repositorio
+git clone https://github.com/<usuario>/<repositorio>.git
+cd <repositorio>
 
-2. **Configurar variables de entorno**
-```bash
-cp .env.example .env
-# Editar .env y agregar tu DEEPL_API_KEY (opcional)
-```
+# 2. Crear y activar un entorno virtual
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
 
-3. **Construir y ejecutar con Docker Compose**
-```bash
-docker-compose up -d
-```
-
-4. **Acceder a la aplicación**
-```
-http://localhost:8501
-```
-
-### Opción 2: Docker Manual
-
-```bash
-# Construir imagen
-docker build -t sepsis-multimodal-app .
-
-# Ejecutar contenedor
-docker run --rm -p 8501:8501 \
-  --env-file .env \
-  --memory=8g \
-  --cpus=4 \
-  sepsis-multimodal-app
-```
-
-### Opción 3: Local (Python)
-
-```bash
-# Crear entorno virtual
-python -m venv venv
-source venv/bin/activate  # En Windows: venv\Scripts\activate
-
-# Instalar dependencias
+# 3. Instalar las dependencias
+pip install --upgrade pip
 pip install -r requirements.txt
-
-# Ejecutar aplicación
-streamlit run app.py
 ```
 
 ---
 
-## 🔧 Configuración
+## Uso de la aplicación
 
-### Variables de Entorno
-
-| Variable | Descripción | Obligatorio | Ejemplo |
-|----------|-------------|-------------|---------|
-| `DEEPL_API_KEY` | API Key de DeepL para traducción | No | `3e3ebc35-...` |
-| `LOG_LEVEL` | Nivel de logging | No | `INFO` |
-
-### Recursos Recomendados
-
-| Recurso | Mínimo | Recomendado |
-|---------|--------|-------------|
-| RAM | 4 GB | 8 GB |
-| CPU | 2 cores | 4 cores |
-| GPU | No requerida | CUDA (acelera embeddings) |
-
----
-
-## 📝 Uso de la Aplicación
-
-1. **Ingresar datos clínicos** de las primeras 24 horas:
-   - Hemoglobina, Albúmina, aPTT, Bilirrubina, Estancia UCI
-
-2. **Pegar nota clínica**:
-   - Español o inglés
-   - Se traduce automáticamente si es necesario
-
-3. **Calcular riesgo**:
-   - Obtener probabilidad de mortalidad a 28 días
-   - Ver nivel de riesgo: 🟢 Bajo / 🟡 Moderado / 🔴 Alto
-
----
-
-## 🔍 Monitoreo y Logs
-
-### Ver logs del contenedor
 ```bash
-docker logs -f sepsis-predictor
+streamlit run app_sepsis.py
 ```
 
-### Ver logs de la aplicación
+Se abre en `http://localhost:8501`. La app permite ingresar las variables
+clínicas de un paciente y obtener su probabilidad estimada de muerte a 28 días,
+con interfaz bilingüe (español / inglés) y desglose del cálculo.
+
+- Casos de prueba listos para validar: [`casos_prueba_app_sepsis.md`](casos_prueba_app_sepsis.md)
+- Guía de despliegue autónomo: [`app_sepsis_estructura_e_instalacion.md`](app_sepsis_estructura_e_instalacion.md)
+
+> La app necesita el modelo entrenado en `artifacts/app_model_v21/` (ver sección
+> siguiente). La traducción de la nota clínica usa internet; la predicción
+> numérica funciona sin conexión.
+
+---
+
+## Datos (MIMIC-IV) — acceso restringido
+
+Este proyecto usa **MIMIC-IV v3.1**, una base de datos de **acceso
+credencializado** (PhysioNet). Por su acuerdo de uso de datos, **la cohorte
+derivada NO se incluye en el repositorio** (`data_local/` está en `.gitignore`).
+
+Para reproducir la extracción se requiere:
+1. Credencial de PhysioNet y curso CITI "Data or Specimens Only Research".
+2. Acceso a MIMIC-IV v3.1 → https://physionet.org/content/mimiciv/
+3. Ejecutar las consultas SQL / scripts de extracción del proyecto.
+
+---
+
+## Modelo entrenado
+
+El modelo desplegable (`artifacts/app_model_v21/ensemble_top3.joblib`, ~132 MB)
+**no se versiona** porque supera el límite de 100 MB de GitHub. Para obtenerlo:
+
+- **Regenerarlo** con `python scripts/build_app_model.py` (requiere la cohorte), o
+- **Publicarlo** como *GitHub Release* o con **Git LFS** (`git lfs track "*.joblib"`).
+
+La app espera en `artifacts/app_model_v21/`: `ensemble_top3.joblib`,
+`mice.joblib`, `scaler.joblib` y `meta.json`.
+
+---
+
+## Cómo publicar este proyecto en GitHub
+
 ```bash
-docker exec sepsis-predictor tail -f /app/logs/app.log
+# 1. Inicializar el repositorio local
+git init
+git add .
+git commit -m "Versión inicial — tesis predicción de mortalidad en sepsis (UPCH)"
+
+# 2. Verificar que NO se incluyan datos ni modelos pesados
+git status          # no deben aparecer data_local/ ni archivos .joblib
+
+# 3. Crear un repositorio vacío en GitHub y enlazarlo
+git remote add origin https://github.com/<usuario>/<repositorio>.git
+git branch -M main
+git push -u origin main
 ```
 
-### Healthcheck
-```bash
-curl http://localhost:8501/_stcore/health
-```
+> Si se desea incluir el modelo entrenado en el repositorio, usar **Git LFS**:
+> `git lfs install && git lfs track "*.joblib"` antes del primer commit.
 
 ---
 
-## 🧪 Validación del Modelo
+## Autores
 
-### Conjunto de Validación
-- 10% del dataset original (guardado en `validation_set_10pct.parquet`)
-- División estratificada por `mortality_28d`
+- **Huaraya Fabián, Josué Eduardo**
+- **Oviedo Chahua, Gilmar Rony**
 
-### Métricas
-- Métrica principal: **ROC-AUC**
-- Ver leaderboard completo: `leaderboard_completo_todas_columnas.csv`
+Tesis · Facultad de Ciencias e Ingeniería · Universidad Peruana Cayetano Heredia · 2026.
 
----
+## Referencia base
 
-## 📂 Estructura del Proyecto
+Zhang, Z. et al. (2024). *Machine learning for the prediction of mortality in
+patients with sepsis-associated acute brain dysfunction.*
+DOI: [10.1038/s41598-024-69332-4](https://doi.org/10.1038/s41598-024-69332-4)
 
-```
-.
-├── app.py                              # Aplicación Streamlit
-├── requirements.txt                     # Dependencias Python
-├── Dockerfile                           # Imagen Docker optimizada
-├── docker-compose.yml                   # Orquestación Docker
-├── .env.example                         # Template de variables de entorno
-├── .gitignore                           # Archivos ignorados por Git
-├── README.md                            # Este archivo
-└── modelo_multimodal_clinicalbert_best/ # Modelo AutoGluon
-    ├── predictor.pkl
-    ├── learner.pkl
-    ├── metadata.json
-    ├── models/                          # 110 modelos base
-    │   ├── CatBoost_BAG_L1/
-    │   ├── LightGBM_BAG_L1/
-    │   ├── WeightedEnsemble_L3/         # ⭐ Mejor modelo
-    │   └── ...
-    └── utils/
-```
+## Licencia
 
----
-
-## 🔐 Seguridad
-
-### Mejoras Implementadas
-- ✅ Usuario no-root en Docker
-- ✅ XSRF Protection habilitado
-- ✅ Secrets en variables de entorno (no hardcoded)
-- ✅ .gitignore para archivos sensibles
-- ✅ Validación de rangos de entrada
-- ✅ Manejo robusto de errores
-
-### Notas de Seguridad
-- No exponer la aplicación directamente a internet sin autenticación
-- Usar HTTPS en producción (reverse proxy como nginx)
-- Rotar API keys regularmente
-
----
-
-## 🐛 Troubleshooting
-
-### Problema: DeepL API falla
-**Solución**: La aplicación usará Helsinki-NLP automáticamente. Verifica:
-```bash
-# Comprobar que la API key es válida
-echo $DEEPL_API_KEY
-```
-
-### Problema: Out of Memory
-**Solución**: Incrementar límite de memoria:
-```bash
-docker run --memory=16g ...
-```
-
-### Problema: Predicción lenta
-**Causas posibles**:
-1. Sin GPU → Embeddings de BERT son más lentos
-2. Primera predicción → Caché de modelos
-3. CPU limitado → Incrementar `--cpus`
-
----
-
-## 📈 Mejoras Implementadas
-
-### v1.0.0 (2025-01-25)
-- ✅ Corregido error de `deepl.DeepLClient` → `deepl.Translator`
-- ✅ BERT movido a GPU solo una vez (reducción de latencia)
-- ✅ Rangos de validación alineados con entrenamiento
-- ✅ Parsing de probabilidades simplificado
-- ✅ Manejo robusto de errores con try-catch
-- ✅ Logging estructurado
-- ✅ Dockerfile optimizado con healthcheck
-- ✅ Docker Compose con límites de recursos
-- ✅ Sidebar con información del modelo
-- ✅ Interpretación de nivel de riesgo (Bajo/Moderado/Alto)
-- ✅ Timestamp en resultados
-
----
-
-## 📄 Licencia
-
-Este proyecto es para uso de investigación académica.
-
----
-
-## 👥 Contacto
-
-Para preguntas o problemas, abrir un issue en el repositorio.
-
----
-
-## 🙏 Agradecimientos
-
-- **MIMIC-IV**: Dataset de UCI
-- **ClinicalBERT**: Modelo de embeddings médicos
-- **AutoGluon**: Framework de AutoML
-- **DeepL**: API de traducción
+Definir antes de publicar. Sugerencia: **MIT** para el código; los datos de
+MIMIC-IV se rigen por su propio acuerdo de uso (PhysioNet) y no se redistribuyen.
