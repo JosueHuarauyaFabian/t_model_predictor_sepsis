@@ -1,5 +1,8 @@
 """
 app.py — Punto de entrada para Streamlit Cloud
-Simplemente importa y ejecuta el módulo principal.
+Ejecuta el contenido de app_sepsis.py de forma segura
 """
-import app_sepsis
+import runpy
+from pathlib import Path
+
+runpy.run_path(str(Path(__file__).parent / "app_sepsis.py"), run_name="__main__")
