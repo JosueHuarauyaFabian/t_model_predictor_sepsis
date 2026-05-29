@@ -834,9 +834,8 @@ ARTIFACTS = ROOT / "artifacts"
 def get_translator():
     try:
         from deep_translator import GoogleTranslator
-        t = GoogleTranslator(source="es", target="en")
-        t.translate("hola")
-        return t
+        # No hacer traducción de prueba; solo crear el objeto
+        return GoogleTranslator(source="es", target="en")
     except Exception:
         return None
 
