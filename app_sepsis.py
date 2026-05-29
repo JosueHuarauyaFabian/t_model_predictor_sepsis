@@ -1438,7 +1438,7 @@ with tab1:
             nota_en = nota_input
 
         st.markdown('<div style="height: 14px;"></div>', unsafe_allow_html=True)
-        btn = st.button(t("btn_calculate"), type="primary", use_container_width=True)
+        btn = st.button(t("btn_calculate"), type="primary", width="stretch")
 
     with col_result:
         st.markdown(f'<div class="sec-label">{t("result_section")}</div>', unsafe_allow_html=True)
@@ -1616,13 +1616,13 @@ with tab2:
         sub = st.columns([1, 8, 1])
         with sub[1]:
             st.caption(t("tab2_caption_roc"))
-            if roc_path.exists(): st.image(str(roc_path), use_container_width=True)
+            if roc_path.exists(): st.image(str(roc_path), width="stretch")
             else: st.info(t("tab2_missing"))
     with c2:
         sub = st.columns([1, 8, 1])
         with sub[1]:
             st.caption(t("tab2_caption_cal"))
-            if cal_path.exists(): st.image(str(cal_path), use_container_width=True)
+            if cal_path.exists(): st.image(str(cal_path), width="stretch")
             else: st.info(t("tab2_missing"))
 
 
@@ -1635,7 +1635,7 @@ with tab3:
         df_tab = pd.read_csv(tab_path)
         st.markdown(f"<div style='font-size:13px; color:{TEXT_SECONDARY}; margin-bottom: 10px;'>"
                     f"{t('tab3_caption')}</div>", unsafe_allow_html=True)
-        st.dataframe(df_tab, use_container_width=True, height=380, hide_index=True)
+        st.dataframe(df_tab, width="stretch", height=380, hide_index=True)
     else:
         st.info(t("tab3_missing"))
 
