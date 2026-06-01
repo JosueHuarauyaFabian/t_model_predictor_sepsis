@@ -36,6 +36,12 @@ El resultado se entrega en dos formas:
 El modelo se entrenó sobre una cohorte de **12 564 pacientes** con sepsis
 extraída de MIMIC-IV v3.1 (prevalencia de muerte a 28 días = **14.3 %**).
 
+### Selección de la cohorte
+
+![Flujograma de selección de cohorte](artifacts/figuras_conceptuales_v11/flujograma_seleccion_cohorte.png)
+
+### Comparación de modelos
+
 | Modelo | AUC (test) | IC 95 % | Sensibilidad | Especificidad | Calibración (HL p) |
 |---|---|---|---|---|---|
 | **Ensemble_top3** ✅ | **0.900** | [0.883 – 0.918] | 0.859 | 0.780 | 0.62 (buena) |
@@ -49,13 +55,30 @@ era deficiente** (la probabilidad predicha no reflejaba el riesgo real). Se
 eligió como modelo final el **`Ensemble_top3`**: cruza el 90 % de AUC, está
 **bien calibrado** (test de Hosmer-Lemeshow p = 0.62) y es más ligero.
 
-**Hallazgo del subgrupo SAD:** los pacientes con disfunción cerebral aguda
-(SAD+, n = 5 213) presentaron una mortalidad del **23.0 %**, frente al **8.1 %**
-de los pacientes sin ella (SAD−, n = 7 351) — un riesgo **2.8× mayor**.
+### Hallazgo del subgrupo SAD
 
-**Interpretabilidad (SHAP):** las variables de mayor impacto en la predicción
-fueron la **edad**, los **días de estancia en UCI**, la **saturación de O₂** y
-la razón **BUN/albúmina**.
+Los pacientes con disfunción cerebral aguda (SAD+, n = 5 213) presentaron una
+mortalidad del **23.0 %**, frente al **8.1 %** de los pacientes sin ella
+(SAD−, n = 7 351) — un riesgo **2.8× mayor**.
+
+![Composición del subgrupo SAD](artifacts/figuras_conceptuales_v11/figura_3_1_composicion_sad.png)
+
+### Interpretabilidad (SHAP)
+
+Las variables de mayor impacto en la predicción fueron la **edad**, los **días
+de estancia en UCI**, la **saturación de O₂** y la razón **BUN/albúmina**.
+
+*SHAP summary del modelo final (Ensemble_top3):*
+
+![SHAP summary del Ensemble](artifacts/figuras_conceptuales_v11/figura_4_6_shap_summary_ensemble.png)
+
+*SHAP summary del componente XGBoost del ensemble:*
+
+![SHAP summary de XGBoost](artifacts/figuras_conceptuales_v11/figura_4_5_shap_summary_xgboost.png)
+
+*Explicación individual de una predicción (SHAP waterfall):*
+
+![SHAP waterfall](artifacts/figuras_conceptuales_v11/figura_4_7_shap_waterfall.png)
 
 ---
 
@@ -79,6 +102,51 @@ extracción de datos hasta el despliegue:
    calibración de Hosmer-Lemeshow e interpretabilidad con SHAP.
 5. **Despliegue** — serialización del modelo (`joblib`) y aplicación web
    en Streamlit.
+
+*Metodología CRISP-DM aplicada al proyecto:*
+
+![Metodología CRISP-DM](artifacts/figuras_conceptuales_v11/figura_3_2_crisp_dm.png)
+
+---
+
+## Marco de evaluación
+
+Las métricas de desempeño se interpretan sobre las siguientes escalas
+conceptuales utilizadas en el documento de tesis:
+
+*Curva ROC y significado del AUC:*
+
+![Curva ROC conceptual](artifacts/figuras_conceptuales_v11/figura_3_5_roc_conceptual.png)
+
+*Escala de interpretación del coeficiente Kappa de Cohen:*
+
+![Escala de interpretación de Kappa](artifacts/figuras_conceptuales_v11/figura_3_6_escala_kappa.png)
+
+*Ciclo de la OMS para modelos de IA en salud — guía el monitoreo posterior al
+despliegue:*
+
+![Ciclo OMS de modelos en salud](artifacts/figuras_conceptuales_v11/figura_3_7_ciclo_oms.png)
+
+---
+
+## Selección de variables y reducción dimensional
+
+La importancia relativa de las variables estructurales se exploró con un
+Random Forest de referencia (índice de Gini):
+
+![Importancia Gini RF-200](artifacts/figuras_conceptuales_v11/figura_importancia_gini_rf200.png)
+
+Para las notas clínicas se aplicó PCA sobre los embeddings BioBERT. La curva de
+codo (*scree plot*) y la varianza acumulada justificaron el número de
+componentes retenidos:
+
+*Scree plot (autovalores por componente):*
+
+![Scree plot PCA](artifacts/figuras_conceptuales_v11/figura_pca_scree.png)
+
+*Varianza explicada acumulada:*
+
+![Varianza acumulada PCA](artifacts/figuras_conceptuales_v11/figura_pca_varianza_acumulada.png)
 
 ---
 
